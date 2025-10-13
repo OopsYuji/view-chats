@@ -1,0 +1,16 @@
+{
+  "name": "view-chats",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace server\" \"npm run dev --workspace web\"",
+    "build": "npm run build --workspace server && npm run build --workspace web"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
