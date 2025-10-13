@@ -41,6 +41,9 @@ const formatMessageContent = (message: ChatMessage) => {
   return JSON.stringify(content, null, 2);
 };
 
+const MIN_SEARCH_LENGTH = 3;
+const SUMMARY_LIMIT = 25;
+
 const App = () => {
   const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -54,42 +57,56 @@ const App = () => {
   const [searchSessionId, setSearchSessionId] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
 
-  const loadSummaries = useCallback(async () => {
-    setLoadingChats(true);
-    setSummariesError(null);
+  const loadSummaries = useCallback(
+    async (searchTerm: string) => {
+      const trimmedSearch = searchTerm.trim();
 
-    try {
-      const data = await fetchChatSummaries();
-      setChatSummaries(data);
+      if (!trimmedSearch) {
+        setChatSummaries([]);
+        setSelectedSessionId(null);
+        return [];
+      }
 
-      const trimmedSearch = searchSessionId.trim();
+      setLoadingChats(true);
+      setSummariesError(null);
 
-      if (trimmedSearch) {
+      try {
+        const data = await fetchChatSummaries({
+          search: trimmedSearch,
+          limit: SUMMARY_LIMIT
+        });
+        setChatSummaries(data);
+
+        if (data.length === 0) {
+          setSelectedSessionId(null);
+          setSummariesError('No chat sessions found. Try searching with the beginning of the id.');
+          return data;
+        }
+
+        const lowerSearch = trimmedSearch.toLowerCase();
         const exactMatch = data.find(
-          (chat) => chat.sessionId.toLowerCase() === trimmedSearch.toLowerCase()
+          (chat) => chat.sessionId.toLowerCase() === lowerSearch
         );
 
         if (exactMatch) {
           setSelectedSessionId(exactMatch.sessionId);
         } else {
-          const partial = data.find((chat) =>
-            chat.sessionId.toLowerCase().includes(trimmedSearch.toLowerCase())
-          );
-          setSelectedSessionId(partial ? partial.sessionId : null);
+          setSelectedSessionId(data[0].sessionId);
         }
-      } else {
-        setSelectedSessionId(null);
-      }
 
-      return data;
-    } catch (error) {
-      console.error('Failed to load chat summaries', error);
-      setSummariesError(error instanceof Error ? error.message : 'Unknown error');
-      throw error;
-    } finally {
-      setLoadingChats(false);
-    }
-  }, [searchSessionId]);
+        return data;
+      } catch (error) {
+        console.error('Failed to load chat summaries', error);
+        setChatSummaries([]);
+        setSelectedSessionId(null);
+        setSummariesError(error instanceof Error ? error.message : 'Unknown error');
+        throw error;
+      } finally {
+        setLoadingChats(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!selectedSessionId) {
@@ -134,14 +151,31 @@ const App = () => {
     setExpandedMessageIds({});
   }, [selectedSessionId, includeSystemMessages]);
 
-  const handleFindSession = async () => {
+  const handleFindSession = useCallback(async () => {
+    const trimmedSearch = searchSessionId.trim();
+
+    if (!trimmedSearch) {
+      setChatSummaries([]);
+      setSelectedSessionId(null);
+      setSummariesError('Enter a session id to search.');
+      return;
+    }
+
+    if (trimmedSearch.length < MIN_SEARCH_LENGTH) {
+      setChatSummaries([]);
+      setSelectedSessionId(null);
+      setSummariesError(`Enter at least ${MIN_SEARCH_LENGTH} characters to search.`);
+      return;
+    }
+
     setHasSearched(true);
+
     try {
-      await loadSummaries();
+      await loadSummaries(trimmedSearch);
     } catch {
       // error handled in loadSummaries
     }
-  };
+  }, [loadSummaries, searchSessionId]);
 
   const handleToggleMessageRaw = (messageId: string) => {
     setExpandedMessageIds((prev) => ({
@@ -171,7 +205,7 @@ const App = () => {
             type="button"
             className="refresh-button"
             disabled={loadingChats || !hasSearched}
-            onClick={() => void loadSummaries()}
+            onClick={() => void handleFindSession()}
           >
             {loadingChats ? 'Refreshing...' : 'Refresh'}
           </button>
@@ -180,7 +214,7 @@ const App = () => {
           className="search-input-row"
           onSubmit={(event) => {
             event.preventDefault();
-            handleFindSession();
+            void handleFindSession();
           }}
         >
           <div className="search-input-wrapper">
@@ -194,7 +228,13 @@ const App = () => {
               <button
                 type="button"
                 className="clear-search"
-                onClick={() => setSearchSessionId('')}
+                onClick={() => {
+                  setSearchSessionId('');
+                  setHasSearched(false);
+                  setChatSummaries([]);
+                  setSelectedSessionId(null);
+                  setSummariesError(null);
+                }}
                 aria-label="Clear search"
               >
                 ×

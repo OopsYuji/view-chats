@@ -29,8 +29,30 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
   return payload.data;
 };
 
-export const fetchChatSummaries = async (): Promise<ChatSummary[]> => {
-  const response = await fetch(buildUrl('/api/chats'));
+interface FetchChatSummariesOptions {
+  search?: string;
+  sessionId?: string;
+  limit?: number;
+}
+
+export const fetchChatSummaries = async (
+  options: FetchChatSummariesOptions
+): Promise<ChatSummary[]> => {
+  const url = new URL(buildUrl('/api/chats'));
+
+  if (options.search) {
+    url.searchParams.set('search', options.search);
+  }
+
+  if (options.sessionId) {
+    url.searchParams.set('sessionId', options.sessionId);
+  }
+
+  if (options.limit != null) {
+    url.searchParams.set('limit', String(options.limit));
+  }
+
+  const response = await fetch(url.toString());
   return handleResponse<ChatSummary[]>(response);
 };
 
