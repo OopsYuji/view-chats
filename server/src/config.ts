@@ -64,7 +64,7 @@ const parseTableName = (value: string | undefined) => {
   };
 };
 
-const table = parseTableName(
+const chatTable = parseTableName(
   normalizeEnv(process.env.CHAT_TABLE ?? process.env.CHAT_TABLE_NAME)
 );
 
@@ -135,8 +135,8 @@ export const config = {
     ssl: parseSslConfig()
   },
   corsOrigins: parseOrigins(process.env.CORS_ORIGIN),
-  chatTable: table.raw,
-  chatTableSql: table.sql
+  chatTable: chatTable.raw,
+  chatTableSql: chatTable.sql
 };
 
 export const assertDatabaseConfig = (): void => {

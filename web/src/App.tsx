@@ -1,6 +1,7 @@
+import type { FormEvent } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { fetchChatMessages, fetchChatSummaries } from './api';
-import type { ChatMessage, ChatSummary } from './types';
+import { fetchChatList, fetchChatMessages } from './api';
+import type { ChatListCursor, ChatListItem, ChatMessage } from './types';
 
 const formatDateTime = (value: string | null) => {
   if (!value) {
@@ -41,72 +42,69 @@ const formatMessageContent = (message: ChatMessage) => {
   return JSON.stringify(content, null, 2);
 };
 
-const MIN_SEARCH_LENGTH = 3;
-const SUMMARY_LIMIT = 25;
+const CHAT_PAGE_SIZE = 50;
+const MIN_CHAT_SEARCH_LENGTH = 3;
 
 const App = () => {
-  const [chatSummaries, setChatSummaries] = useState<ChatSummary[]>([]);
+  const [chatList, setChatList] = useState<ChatListItem[]>([]);
+  const [listCursor, setListCursor] = useState<ChatListCursor | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loadingChats, setLoadingChats] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [summariesError, setSummariesError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [includeSystemMessages, setIncludeSystemMessages] = useState(true);
   const [expandedMessageIds, setExpandedMessageIds] = useState<Record<string, boolean>>({});
-  const [searchSessionId, setSearchSessionId] = useState('');
-  const [hasSearched, setHasSearched] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
+  const [showOnlyWhatsapp, setShowOnlyWhatsapp] = useState(false);
 
-  const loadSummaries = useCallback(
-    async (searchTerm: string) => {
-      const trimmedSearch = searchTerm.trim();
-
-      if (!trimmedSearch) {
-        setChatSummaries([]);
-        setSelectedSessionId(null);
-        return [];
-      }
-
-      setLoadingChats(true);
-      setSummariesError(null);
+  const loadChatList = useCallback(
+    async ({ reset, cursor }: { reset: boolean; cursor?: ChatListCursor | null }) => {
+      setListLoading(true);
+      setListError(null);
 
       try {
-        const data = await fetchChatSummaries({
-          search: trimmedSearch,
-          limit: SUMMARY_LIMIT
+        const response = await fetchChatList({
+          limit: CHAT_PAGE_SIZE,
+          ...(reset ? {} : cursor ? { cursor } : {}),
+          ...(appliedSearch ? { search: appliedSearch } : {})
         });
-        setChatSummaries(data);
 
-        if (data.length === 0) {
-          setSelectedSessionId(null);
-          setSummariesError('No chat sessions found. Try searching with the beginning of the id.');
-          return data;
-        }
+        setChatList((prev) => (reset ? response.items : [...prev, ...response.items]));
+        setListCursor(response.nextCursor ?? null);
 
-        const lowerSearch = trimmedSearch.toLowerCase();
-        const exactMatch = data.find(
-          (chat) => chat.sessionId.toLowerCase() === lowerSearch
-        );
+        setSelectedSessionId((prev) => {
+          if (reset) {
+            if (prev && response.items.some((item) => item.sessionId === prev)) {
+              return prev;
+            }
 
-        if (exactMatch) {
-          setSelectedSessionId(exactMatch.sessionId);
-        } else {
-          setSelectedSessionId(data[0].sessionId);
-        }
+            return response.items[0]?.sessionId ?? null;
+          }
 
-        return data;
+          return prev ?? response.items[0]?.sessionId ?? null;
+        });
       } catch (error) {
-        console.error('Failed to load chat summaries', error);
-        setChatSummaries([]);
-        setSelectedSessionId(null);
-        setSummariesError(error instanceof Error ? error.message : 'Unknown error');
-        throw error;
+        console.error('Failed to load chats', error);
+        setListError(error instanceof Error ? error.message : 'Unknown error');
+        if (reset) {
+          setChatList([]);
+          setListCursor(null);
+          setSelectedSessionId(null);
+        }
       } finally {
-        setLoadingChats(false);
+        setListLoading(false);
       }
     },
-    []
+    [appliedSearch]
   );
+
+  useEffect(() => {
+    void loadChatList({ reset: true });
+  }, [loadChatList]);
 
   useEffect(() => {
     if (!selectedSessionId) {
@@ -151,31 +149,35 @@ const App = () => {
     setExpandedMessageIds({});
   }, [selectedSessionId, includeSystemMessages]);
 
-  const handleFindSession = useCallback(async () => {
-    const trimmedSearch = searchSessionId.trim();
+  const handleSearchSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const trimmed = searchInput.trim();
 
-    if (!trimmedSearch) {
-      setChatSummaries([]);
-      setSelectedSessionId(null);
-      setSummariesError('Enter a session id to search.');
+      if (trimmed && trimmed.length < MIN_CHAT_SEARCH_LENGTH) {
+        setSearchFeedback(`Enter at least ${MIN_CHAT_SEARCH_LENGTH} characters to search.`);
+        return;
+      }
+
+      setSearchFeedback(null);
+      setAppliedSearch(trimmed);
+    },
+    [searchInput]
+  );
+
+  const handleClearSearch = useCallback(() => {
+    setSearchInput('');
+    setAppliedSearch('');
+    setSearchFeedback(null);
+  }, []);
+
+  const handleLoadMore = useCallback(() => {
+    if (listLoading || !listCursor) {
       return;
     }
 
-    if (trimmedSearch.length < MIN_SEARCH_LENGTH) {
-      setChatSummaries([]);
-      setSelectedSessionId(null);
-      setSummariesError(`Enter at least ${MIN_SEARCH_LENGTH} characters to search.`);
-      return;
-    }
-
-    setHasSearched(true);
-
-    try {
-      await loadSummaries(trimmedSearch);
-    } catch {
-      // error handled in loadSummaries
-    }
-  }, [loadSummaries, searchSessionId]);
+    void loadChatList({ reset: false, cursor: listCursor });
+  }, [listCursor, listLoading, loadChatList]);
 
   const handleToggleMessageRaw = (messageId: string) => {
     setExpandedMessageIds((prev) => ({
@@ -184,9 +186,28 @@ const App = () => {
     }));
   };
 
-  const selectedSummary = selectedSessionId
-    ? chatSummaries.find((chat) => chat.sessionId === selectedSessionId)
-    : undefined;
+  const displayedChats = useMemo(
+    () =>
+      showOnlyWhatsapp
+        ? chatList.filter((chat) => chat.sessionId.split('_').length === 2)
+        : chatList,
+    [chatList, showOnlyWhatsapp]
+  );
+
+  useEffect(() => {
+    if (displayedChats.length === 0) {
+      if (selectedSessionId !== null) {
+        setSelectedSessionId(null);
+      }
+      return;
+    }
+
+    if (selectedSessionId && displayedChats.some((chat) => chat.sessionId === selectedSessionId)) {
+      return;
+    }
+
+    setSelectedSessionId(displayedChats[0].sessionId);
+  }, [displayedChats, selectedSessionId]);
 
   const visibleMessages = useMemo(
     () =>
@@ -197,56 +218,96 @@ const App = () => {
   );
 
   return (
-    <div className="app single-column">
-      <section className="search-panel">
-        <div className="search-header">
-          <h1 className="search-panel-title">Chat Sessions</h1>
-          <button
-            type="button"
-            className="refresh-button"
-            disabled={loadingChats || !hasSearched}
-            onClick={() => void handleFindSession()}
-          >
-            {loadingChats ? 'Refreshing...' : 'Refresh'}
-          </button>
+    <div className="app">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <h1 className="sidebar-title">Chats</h1>
         </div>
-        <form
-          className="search-input-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleFindSession();
-          }}
-        >
+        <form className="sidebar-search" onSubmit={handleSearchSubmit}>
           <div className="search-input-wrapper">
             <input
               type="text"
-              value={searchSessionId}
+              value={searchInput}
               placeholder="Search session id..."
-              onChange={(event) => setSearchSessionId(event.target.value)}
+              onChange={(event) => setSearchInput(event.target.value)}
             />
-            {searchSessionId && (
+            {searchInput && (
               <button
                 type="button"
                 className="clear-search"
-                onClick={() => {
-                  setSearchSessionId('');
-                  setHasSearched(false);
-                  setChatSummaries([]);
-                  setSelectedSessionId(null);
-                  setSummariesError(null);
-                }}
+                onClick={handleClearSearch}
                 aria-label="Clear search"
               >
-                ×
+                x
               </button>
             )}
           </div>
           <button type="submit" className="search-button">
-            Find
+            Search
           </button>
         </form>
-        {summariesError && <div className="error-banner">{summariesError}</div>}
-      </section>
+        <div className="sidebar-controls">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={showOnlyWhatsapp}
+              onChange={(event) => setShowOnlyWhatsapp(event.target.checked)}
+            />
+            <span>Show only WhatsApp</span>
+          </label>
+        </div>
+        {searchFeedback && <div className="info-banner">{searchFeedback}</div>}
+        {listError && <div className="error-banner">{listError}</div>}
+        <ul className="chat-list">
+          {displayedChats.length === 0 && !listLoading ? (
+            <li className="chat-empty">
+              <div className="empty-state">
+                <strong>No chats found</strong>
+                <span>
+                  {showOnlyWhatsapp
+                    ? 'Try disabling the WhatsApp filter or load more results.'
+                    : 'Adjust your search to see results.'}
+                </span>
+              </div>
+            </li>
+          ) : (
+            displayedChats.map((chat) => {
+              const isActive = chat.sessionId === selectedSessionId;
+              return (
+                <li key={chat.sessionId} className="chat-item">
+                  <button
+                    type="button"
+                    className={`chat-button${isActive ? ' active' : ''}`}
+                    onClick={() => setSelectedSessionId(chat.sessionId)}
+                  >
+                    <span className="chat-session-id">{chat.sessionId}</span>
+                    <span className="chat-meta">
+                      {formatDateTime(chat.lastMessageAt)}
+                      {` · ${chat.messageCount} msgs`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })
+          )}
+        </ul>
+        <div className="sidebar-footer">
+          {listLoading ? (
+            <div className="spinner" />
+          ) : listCursor ? (
+            <button
+              type="button"
+              className="load-more"
+              onClick={handleLoadMore}
+              disabled={listLoading}
+            >
+              Load more
+            </button>
+          ) : (
+            <span className="sidebar-end">End of results</span>
+          )}
+        </div>
+      </aside>
 
       <main className="main">
         {selectedSessionId ? (
@@ -255,11 +316,9 @@ const App = () => {
               <span className="session-id">{selectedSessionId}</span>
               <div className="main-header-meta">
                 <span className="message-count">
-                  {selectedSummary
-                    ? includeSystemMessages
-                      ? `${selectedSummary.messageCount} messages`
-                      : `${visibleMessages.length} of ${selectedSummary.messageCount} messages`
-                    : ''}
+                  {includeSystemMessages
+                    ? `${messages.length} messages`
+                    : `${visibleMessages.length} of ${messages.length} messages`}
                 </span>
                 <label className="toggle">
                   <input
@@ -289,10 +348,15 @@ const App = () => {
                   const content = formatMessageContent(message);
                   const messageType = message.payload.type ?? 'unknown';
                   const isExpanded = !!expandedMessageIds[message.id];
+                  const normalizedType = messageType.toLowerCase();
+                  const alignmentClass =
+                    normalizedType === 'ai' || normalizedType === 'system'
+                      ? 'align-right'
+                      : 'align-left';
                   return (
                     <article
                       key={message.id}
-                      className={`message-card type-${messageType.toLowerCase()}`}
+                      className={`message-card type-${normalizedType} ${alignmentClass}`}
                     >
                       <header className="message-meta">
                         <span>{messageType.toUpperCase()}</span>
@@ -319,8 +383,8 @@ const App = () => {
           </>
         ) : (
           <div className="empty-state">
-            <strong>Search for a chat session</strong>
-            <span>Enter a session id above and press Find to load messages.</span>
+            <strong>Select a chat</strong>
+            <span>Choose a chat from the sidebar to load its messages.</span>
           </div>
         )}
       </main>

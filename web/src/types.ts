@@ -24,3 +24,19 @@ export interface ChatMessage {
   createdAt: string;
   payload: ChatMessagePayload;
 }
+
+export interface ChatListItem {
+  sessionId: string;
+  lastMessageAt: string | null;
+  messageCount: number;
+}
+
+export interface ChatListCursor {
+  lastMessageAt: string;
+  sessionId: string;
+}
+
+export interface ChatListResponse {
+  items: ChatListItem[];
+  nextCursor?: ChatListCursor;
+}

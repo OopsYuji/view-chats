@@ -1,12 +1,19 @@
 import { Router } from 'express';
 import { config } from '../config';
 import { query } from '../db';
-import type { ChatMessage, ChatMessagePayload, ChatSummary } from '../types';
+import type {
+  ChatListResponse,
+  ChatMessage,
+  ChatMessagePayload,
+  ChatSummary
+} from '../types';
 
 const router = Router();
 const chatTable = config.chatTableSql;
 const DEFAULT_SUMMARY_LIMIT = 25;
 const MAX_SUMMARY_LIMIT = 200;
+const LIST_DEFAULT_LIMIT = 50;
+const LIST_MAX_LIMIT = 200;
 const MIN_SEARCH_LENGTH = 3;
 
 const escapeForILike = (input: string) => input.replace(/([_%\\])/g, '\\$1');
@@ -24,6 +31,147 @@ const parseLimit = (rawLimit: unknown) => {
 
   return Math.min(Math.max(parsed, 1), MAX_SUMMARY_LIMIT);
 };
+
+const parseListLimit = (rawLimit: unknown) => {
+  if (typeof rawLimit !== 'string') {
+    return LIST_DEFAULT_LIMIT;
+  }
+
+  const parsed = Number.parseInt(rawLimit, 10);
+
+  if (!Number.isFinite(parsed)) {
+    return LIST_DEFAULT_LIMIT;
+  }
+
+  return Math.min(Math.max(parsed, 1), LIST_MAX_LIMIT);
+};
+
+const normalizeCount = (value: string | number | null | undefined) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+};
+
+const tryParseIsoDate = (value: string | undefined): Date | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed;
+};
+
+router.get('/list', async (req, res, next) => {
+  const limit = parseListLimit(req.query.limit);
+  const cursorLastMessageAt =
+    typeof req.query.cursorLastMessageAt === 'string' ? req.query.cursorLastMessageAt : undefined;
+  const cursorSessionId =
+    typeof req.query.cursorSessionId === 'string' ? req.query.cursorSessionId : undefined;
+  const rawSearch = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+  const search = rawSearch && rawSearch.length > 0 ? rawSearch : undefined;
+
+  if (search && search.length < MIN_SEARCH_LENGTH) {
+    res.status(400).json({
+      error: `Search query must be at least ${MIN_SEARCH_LENGTH} characters long.`
+    });
+    return;
+  }
+
+  try {
+    const params: unknown[] = [];
+    const whereConditions: string[] = [];
+
+    if (search) {
+      params.push(`${escapeForILike(search)}%`);
+      whereConditions.push(`session_id ILIKE $${params.length}`);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    let cursorClause = '';
+    const cursorDate = tryParseIsoDate(cursorLastMessageAt);
+
+    if (cursorDate) {
+      params.push(cursorDate.toISOString());
+      const dateIndex = params.length;
+
+      if (cursorSessionId) {
+        params.push(cursorSessionId);
+        const sessionIndex = params.length;
+        cursorClause = `AND (last_message_at < $${dateIndex} OR (last_message_at = $${dateIndex} AND session_id < $${sessionIndex}))`;
+      } else {
+        cursorClause = `AND last_message_at < $${dateIndex}`;
+      }
+    }
+
+    params.push(limit);
+    const limitIndex = params.length;
+
+    const result = await query<{
+      session_id: string;
+      message_count: string | number;
+      last_message_at: Date | null;
+    }>(
+      `
+        WITH session_stats AS (
+          SELECT
+            session_id,
+            COUNT(*) AS message_count,
+            MAX(created_at) AS last_message_at
+          FROM ${chatTable}
+          ${whereClause}
+          GROUP BY session_id
+        )
+        SELECT session_id, message_count, last_message_at
+        FROM session_stats
+        WHERE 1=1
+        ${cursorClause}
+        ORDER BY last_message_at DESC NULLS LAST, session_id DESC
+        LIMIT $${limitIndex}
+      `,
+      params
+    );
+
+    const items = result.rows.map((row) => ({
+      sessionId: row.session_id,
+      lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
+      messageCount: normalizeCount(row.message_count)
+    }));
+
+    let nextCursor: { lastMessageAt: string; sessionId: string } | undefined;
+
+    if (items.length === limit) {
+      const lastItem = items[items.length - 1];
+      if (lastItem.lastMessageAt) {
+        nextCursor = {
+          lastMessageAt: lastItem.lastMessageAt,
+          sessionId: lastItem.sessionId
+        };
+      }
+    }
+
+    const payload: ChatListResponse = {
+      items,
+      ...(nextCursor ? { nextCursor } : {})
+    };
+
+    res.json({ data: payload });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/', async (req, res, next) => {
   const sessionIdQuery =
@@ -60,7 +208,7 @@ router.get('/', async (req, res, next) => {
         lastMessagePreview: row.last_message_content,
         lastMessageType: row.last_message_type,
         lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
-        messageCount: Number(row.message_count) || 0
+        messageCount: normalizeCount(row.message_count)
       }));
 
       res.json({ data: chats });
@@ -142,7 +290,7 @@ router.get('/', async (req, res, next) => {
       lastMessagePreview: row.last_message_content,
       lastMessageType: row.last_message_type,
       lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
-      messageCount: Number(row.message_count) || 0
+      messageCount: normalizeCount(row.message_count)
     }));
 
     res.json({ data: chats });
