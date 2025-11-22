@@ -1,5 +1,8 @@
+import path from 'path';
 import dotenv from 'dotenv';
 
+const rootEnvPath = path.resolve(__dirname, '..', '..', '.env');
+dotenv.config({ path: rootEnvPath });
 dotenv.config();
 
 const parsePort = (value: string | undefined, fallback: number): number => {
@@ -43,8 +46,7 @@ const sanitizeIdentifierPart = (part: string) => {
   return `"${part.replace(/"/g, '""')}"`;
 };
 
-const parseTableName = (value: string | undefined) => {
-  const fallback = 'chat_messages';
+const parseTableName = (value: string | undefined, fallback: string) => {
   const source = value?.trim() || fallback;
 
   const parts = source
@@ -65,8 +67,22 @@ const parseTableName = (value: string | undefined) => {
 };
 
 const chatTable = parseTableName(
-  normalizeEnv(process.env.CHAT_TABLE ?? process.env.CHAT_TABLE_NAME)
+  normalizeEnv(process.env.CHAT_TABLE ?? process.env.CHAT_TABLE_NAME),
+  'chat_messages'
 );
+
+const visitorSettingsTable = parseTableName(
+  normalizeEnv(process.env.VISITOR_SETTINGS_TABLE ?? process.env.VISITORS_SETTINGS_TABLE),
+  'visitors_settings'
+);
+
+const googleClientId = normalizeEnv(process.env.GOOGLE_CLIENT_ID);
+
+if (!googleClientId) {
+  throw new Error('GOOGLE_CLIENT_ID is required for authentication.');
+}
+
+const googleAllowedDomain = normalizeEnv(process.env.GOOGLE_ALLOWED_DOMAIN) ?? 'kiv.chat';
 
 type SslConfig = false | { rejectUnauthorized?: boolean };
 
@@ -136,7 +152,13 @@ export const config = {
   },
   corsOrigins: parseOrigins(process.env.CORS_ORIGIN),
   chatTable: chatTable.raw,
-  chatTableSql: chatTable.sql
+  chatTableSql: chatTable.sql,
+  visitorSettingsTable: visitorSettingsTable.raw,
+  visitorSettingsTableSql: visitorSettingsTable.sql,
+  auth: {
+    googleClientId,
+    allowedDomain: googleAllowedDomain
+  }
 };
 
 export const assertDatabaseConfig = (): void => {

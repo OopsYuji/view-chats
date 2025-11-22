@@ -1,3 +1,4 @@
+import { getAuthHeaders } from './auth';
 import type { ChatListCursor, ChatListResponse, ChatMessage, ChatSummary } from './types';
 
 const defaultApiBase = 'http://localhost:4000';
@@ -52,12 +53,20 @@ export const fetchChatSummaries = async (
     url.searchParams.set('limit', String(options.limit));
   }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), {
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
   return handleResponse<ChatSummary[]>(response);
 };
 
 export const fetchChatMessages = async (sessionId: string): Promise<ChatMessage[]> => {
-  const response = await fetch(buildUrl(`/api/chats/${encodeURIComponent(sessionId)}/messages`));
+  const response = await fetch(buildUrl(`/api/chats/${encodeURIComponent(sessionId)}/messages`), {
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
   return handleResponse<ChatMessage[]>(response);
 };
 
@@ -65,6 +74,8 @@ interface FetchChatListOptions {
   limit?: number;
   cursor?: ChatListCursor | null;
   search?: string;
+  onlySales?: boolean;
+  onlyWhatsapp?: boolean;
 }
 
 export const fetchChatList = async (
@@ -88,6 +99,18 @@ export const fetchChatList = async (
     url.searchParams.set('search', options.search);
   }
 
-  const response = await fetch(url.toString());
+  if (options.onlySales) {
+    url.searchParams.set('onlySales', 'true');
+  }
+
+  if (options.onlyWhatsapp) {
+    url.searchParams.set('onlyWhatsapp', 'true');
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
   return handleResponse<ChatListResponse>(response);
 };

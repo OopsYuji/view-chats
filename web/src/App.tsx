@@ -1,7 +1,33 @@
 import type { FormEvent } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchChatList, fetchChatMessages } from './api';
+import { initializeAuthToken, persistAuthToken } from './auth';
 import type { ChatListCursor, ChatListItem, ChatMessage } from './types';
+
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize(config: {
+            client_id: string;
+            callback: (response: GoogleCredentialResponse) => void;
+          }): void;
+          renderButton(
+            parent: HTMLElement,
+            options: { theme?: string; size?: string; width?: number }
+          ): void;
+          prompt(): void;
+          disableAutoSelect?: () => void;
+        };
+      };
+    };
+  }
+}
 
 const formatDateTime = (value: string | null) => {
   if (!value) {
@@ -42,10 +68,31 @@ const formatMessageContent = (message: ChatMessage) => {
   return JSON.stringify(content, null, 2);
 };
 
+const decodeEmailFromToken = (token: string): string | null => {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+
+    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(atob(normalized));
+    return typeof decoded.email === 'string' ? decoded.email : null;
+  } catch {
+    return null;
+  }
+};
+
+const initialAuthToken = typeof window === 'undefined' ? null : initializeAuthToken();
+
 const CHAT_PAGE_SIZE = 50;
 const MIN_CHAT_SEARCH_LENGTH = 3;
 
 const App = () => {
+  const [authToken, setAuthTokenState] = useState<string | null>(initialAuthToken);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(Boolean(initialAuthToken));
   const [chatList, setChatList] = useState<ChatListItem[]>([]);
   const [listCursor, setListCursor] = useState<ChatListCursor | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -59,10 +106,125 @@ const App = () => {
   const [searchInput, setSearchInput] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
-  const [showOnlyWhatsapp, setShowOnlyWhatsapp] = useState(false);
+  const [showSalesOnly, setShowSalesOnly] = useState(false);
+  const [showWhatsappOnly, setShowWhatsappOnly] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+  useEffect(() => {
+    persistAuthToken(authToken);
+    if (authToken) {
+      setUserEmail(decodeEmailFromToken(authToken));
+    } else {
+      setUserEmail(null);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    if (authToken) {
+      setAuthReady(true);
+      return;
+    }
+
+    if (!googleClientId) {
+      setAuthError('Missing Google client ID (VITE_GOOGLE_CLIENT_ID).');
+      return;
+    }
+
+    let mounted = true;
+    let script: HTMLScriptElement | null = null;
+
+    const initialize = () => {
+      if (!mounted) {
+        return;
+      }
+
+      const google = window.google?.accounts?.id;
+
+      if (!google) {
+        setAuthError('Google Identity Services unavailable.');
+        return;
+      }
+
+      google.initialize({
+        client_id: googleClientId,
+        callback: (response) => {
+          if (!response.credential) {
+            setAuthError('Google Sign-In failed. Please try again.');
+            return;
+          }
+
+          setAuthTokenState(response.credential);
+          setAuthError(null);
+        }
+      });
+
+      if (googleButtonRef.current) {
+        google.renderButton(googleButtonRef.current, {
+          theme: 'outline',
+          size: 'large',
+          width: 280
+        });
+      }
+
+      google.prompt();
+      setAuthReady(true);
+    };
+
+    if (window.google?.accounts?.id) {
+      initialize();
+    } else {
+      script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initialize;
+      script.onerror = () => {
+        if (mounted) {
+          setAuthError('Failed to load Google Sign-In. Refresh and try again.');
+        }
+      };
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      mounted = false;
+      if (script) {
+        document.head.removeChild(script);
+      }
+    };
+  }, [authToken, googleClientId]);
+
+  const handleSignOut = useCallback(() => {
+    setAuthTokenState(null);
+    setAuthReady(false);
+    setAuthError(null);
+    setChatList([]);
+    setListCursor(null);
+    setSelectedSessionId(null);
+    setMessages([]);
+    setMessagesError(null);
+    setListError(null);
+    setExpandedMessageIds({});
+    setSearchInput('');
+    setAppliedSearch('');
+    setShowSalesOnly(false);
+    setShowWhatsappOnly(false);
+    window.google?.accounts?.id?.disableAutoSelect?.();
+  }, []);
 
   const loadChatList = useCallback(
     async ({ reset, cursor }: { reset: boolean; cursor?: ChatListCursor | null }) => {
+      if (!authToken) {
+        if (reset) {
+          setChatList([]);
+          setListCursor(null);
+          setSelectedSessionId(null);
+        }
+
+        return;
+      }
+
       setListLoading(true);
       setListError(null);
 
@@ -70,7 +232,9 @@ const App = () => {
         const response = await fetchChatList({
           limit: CHAT_PAGE_SIZE,
           ...(reset ? {} : cursor ? { cursor } : {}),
-          ...(appliedSearch ? { search: appliedSearch } : {})
+          ...(appliedSearch ? { search: appliedSearch } : {}),
+          ...(showSalesOnly ? { onlySales: true } : {}),
+          ...(showWhatsappOnly ? { onlyWhatsapp: true } : {})
         });
 
         setChatList((prev) => (reset ? response.items : [...prev, ...response.items]));
@@ -99,15 +263,19 @@ const App = () => {
         setListLoading(false);
       }
     },
-    [appliedSearch]
+    [appliedSearch, authToken, showSalesOnly, showWhatsappOnly]
   );
 
   useEffect(() => {
+    if (!authToken) {
+      return;
+    }
+
     void loadChatList({ reset: true });
-  }, [loadChatList]);
+  }, [authToken, loadChatList]);
 
   useEffect(() => {
-    if (!selectedSessionId) {
+    if (!selectedSessionId || !authToken) {
       setMessages([]);
       setMessagesError(null);
       setExpandedMessageIds({});
@@ -123,9 +291,9 @@ const App = () => {
       try {
         const data = await fetchChatMessages(selectedSessionId);
         if (!isCancelled) {
-          setMessages(data);
-        }
-      } catch (error) {
+        setMessages(data);
+      }
+    } catch (error) {
         console.error('Failed to load chat messages', error);
         if (!isCancelled) {
           setMessages([]);
@@ -143,7 +311,7 @@ const App = () => {
     return () => {
       isCancelled = true;
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, authToken]);
 
   useEffect(() => {
     setExpandedMessageIds({});
@@ -186,28 +354,33 @@ const App = () => {
     }));
   };
 
-  const displayedChats = useMemo(
-    () =>
-      showOnlyWhatsapp
-        ? chatList.filter((chat) => chat.sessionId.split('_').length === 2)
-        : chatList,
-    [chatList, showOnlyWhatsapp]
-  );
+  const emptyFilterMessage = useMemo(() => {
+    if (showSalesOnly && showWhatsappOnly) {
+      return 'Try relaxing the Sales or WhatsApp filters, or load more results.';
+    }
+    if (showSalesOnly) {
+      return 'Try disabling the Sales filter or load more results.';
+    }
+    if (showWhatsappOnly) {
+      return 'Try disabling the WhatsApp filter or load more results.';
+    }
+    return 'Adjust your search to see results.';
+  }, [showSalesOnly, showWhatsappOnly]);
 
   useEffect(() => {
-    if (displayedChats.length === 0) {
+    if (chatList.length === 0) {
       if (selectedSessionId !== null) {
         setSelectedSessionId(null);
       }
       return;
     }
 
-    if (selectedSessionId && displayedChats.some((chat) => chat.sessionId === selectedSessionId)) {
+    if (selectedSessionId && chatList.some((chat) => chat.sessionId === selectedSessionId)) {
       return;
     }
 
-    setSelectedSessionId(displayedChats[0].sessionId);
-  }, [displayedChats, selectedSessionId]);
+    setSelectedSessionId(chatList[0].sessionId);
+  }, [chatList, selectedSessionId]);
 
   const visibleMessages = useMemo(
     () =>
@@ -217,11 +390,37 @@ const App = () => {
     [includeSystemMessages, messages]
   );
 
+  if (!authToken) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-card">
+          <div className="auth-card-header">
+            <h1>View Chats</h1>
+            <p>Review conversations securely using your Google workspace account.</p>
+          </div>
+          <div className="auth-card-body">
+            <span className="auth-card-badge">Internal access</span>
+            {authError && <div className="error-banner">{authError}</div>}
+            {!authError && !authReady && <div className="spinner" />}
+            <div className="google-button-anchor" ref={googleButtonRef} />
+            <small>Only approved company email addresses can sign in.</small>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <h1 className="sidebar-title">Chats</h1>
+          <div className="sidebar-user">
+            <h1 className="sidebar-title">Chats</h1>
+            {userEmail && <span className="sidebar-user-email">{userEmail}</span>}
+          </div>
+          <button type="button" className="sign-out-button" onClick={handleSignOut}>
+            Sign out
+          </button>
         </div>
         <form className="sidebar-search" onSubmit={handleSearchSubmit}>
           <div className="search-input-wrapper">
@@ -250,28 +449,32 @@ const App = () => {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={showOnlyWhatsapp}
-              onChange={(event) => setShowOnlyWhatsapp(event.target.checked)}
+              checked={showSalesOnly}
+              onChange={(event) => setShowSalesOnly(event.target.checked)}
             />
-            <span>Show only WhatsApp</span>
+            <span>Sales</span>
+          </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={showWhatsappOnly}
+              onChange={(event) => setShowWhatsappOnly(event.target.checked)}
+            />
+            <span>WhatsApp</span>
           </label>
         </div>
         {searchFeedback && <div className="info-banner">{searchFeedback}</div>}
         {listError && <div className="error-banner">{listError}</div>}
         <ul className="chat-list">
-          {displayedChats.length === 0 && !listLoading ? (
+          {chatList.length === 0 && !listLoading ? (
             <li className="chat-empty">
               <div className="empty-state">
                 <strong>No chats found</strong>
-                <span>
-                  {showOnlyWhatsapp
-                    ? 'Try disabling the WhatsApp filter or load more results.'
-                    : 'Adjust your search to see results.'}
-                </span>
+                <span>{emptyFilterMessage}</span>
               </div>
             </li>
           ) : (
-            displayedChats.map((chat) => {
+            chatList.map((chat) => {
               const isActive = chat.sessionId === selectedSessionId;
               return (
                 <li key={chat.sessionId} className="chat-item">

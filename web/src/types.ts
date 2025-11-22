@@ -6,6 +6,8 @@ export interface ChatSummary {
   lastMessageType: ChatAuthorType | null;
   lastMessageAt: string | null;
   messageCount: number;
+  isSales: boolean;
+  isWhatsapp: boolean;
 }
 
 export interface ChatMessagePayload {
@@ -29,6 +31,8 @@ export interface ChatListItem {
   sessionId: string;
   lastMessageAt: string | null;
   messageCount: number;
+  isSales: boolean;
+  isWhatsapp: boolean;
 }
 
 export interface ChatListCursor {

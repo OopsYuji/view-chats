@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { ErrorRequestHandler } from 'express';
 import { config } from './config';
 import { disconnect } from './db';
+import { requireAuth } from './middleware/auth';
 import chatsRouter from './routes/chats';
 
 const app = express();
@@ -23,7 +24,7 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/api/chats', chatsRouter);
+app.use('/api/chats', requireAuth, chatsRouter);
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   // Avoid leaking implementation details while still giving a hint in the logs.

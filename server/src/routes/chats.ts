@@ -10,6 +10,19 @@ import type {
 
 const router = Router();
 const chatTable = config.chatTableSql;
+const visitorSettingsTable = config.visitorSettingsTableSql;
+const SALES_TYPE_CONDITION = "vs.type = 'sales'";
+const WHATSAPP_CONDITION = 'vs.is_whatsapp IS TRUE';
+const SESSION_WHATSAPP_CONDITION = "array_length(string_to_array(ss.session_id, '_'), 1) = 2";
+
+const parseBooleanFlag = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
 const DEFAULT_SUMMARY_LIMIT = 25;
 const MAX_SUMMARY_LIMIT = 200;
 const LIST_DEFAULT_LIMIT = 50;
@@ -81,6 +94,8 @@ router.get('/list', async (req, res, next) => {
     typeof req.query.cursorSessionId === 'string' ? req.query.cursorSessionId : undefined;
   const rawSearch = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
   const search = rawSearch && rawSearch.length > 0 ? rawSearch : undefined;
+  const onlySales = parseBooleanFlag(req.query.onlySales);
+  const onlyWhatsapp = parseBooleanFlag(req.query.onlyWhatsapp);
 
   if (search && search.length < MIN_SEARCH_LENGTH) {
     res.status(400).json({
@@ -100,7 +115,16 @@ router.get('/list', async (req, res, next) => {
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-    let cursorClause = '';
+    const cursorConditions: string[] = [];
+    const filterConditions: string[] = [];
+
+    if (onlySales && onlyWhatsapp) {
+      filterConditions.push(`(${SALES_TYPE_CONDITION} AND ${WHATSAPP_CONDITION})`);
+    } else if (onlySales) {
+      filterConditions.push(SALES_TYPE_CONDITION);
+    } else if (onlyWhatsapp) {
+      filterConditions.push(SESSION_WHATSAPP_CONDITION);
+    }
     const cursorDate = tryParseIsoDate(cursorLastMessageAt);
 
     if (cursorDate) {
@@ -110,11 +134,18 @@ router.get('/list', async (req, res, next) => {
       if (cursorSessionId) {
         params.push(cursorSessionId);
         const sessionIndex = params.length;
-        cursorClause = `AND (last_message_at < $${dateIndex} OR (last_message_at = $${dateIndex} AND session_id < $${sessionIndex}))`;
+        cursorConditions.push(
+          `(ss.last_message_at < $${dateIndex} OR (ss.last_message_at = $${dateIndex} AND ss.session_id < $${sessionIndex}))`
+        );
       } else {
-        cursorClause = `AND last_message_at < $${dateIndex}`;
+        cursorConditions.push(`ss.last_message_at < $${dateIndex}`);
       }
     }
+
+    const cursorClause =
+      cursorConditions.length > 0 ? `AND ${cursorConditions.join(' AND ')}` : '';
+    const filterClause =
+      filterConditions.length > 0 ? `AND ${filterConditions.join(' AND ')}` : '';
 
     params.push(limit);
     const limitIndex = params.length;
@@ -123,6 +154,8 @@ router.get('/list', async (req, res, next) => {
       session_id: string;
       message_count: string | number;
       last_message_at: Date | null;
+      is_sales: boolean | null;
+      is_whatsapp: boolean | null;
     }>(
       `
         WITH session_stats AS (
@@ -134,10 +167,17 @@ router.get('/list', async (req, res, next) => {
           ${whereClause}
           GROUP BY session_id
         )
-        SELECT session_id, message_count, last_message_at
-        FROM session_stats
+        SELECT
+          ss.session_id,
+          ss.message_count,
+          ss.last_message_at,
+          COALESCE(${SALES_TYPE_CONDITION}, false) AS is_sales,
+          COALESCE(vs.is_whatsapp, false) AS is_whatsapp
+        FROM session_stats ss
+        LEFT JOIN ${visitorSettingsTable} vs ON vs.session_id = ss.session_id
         WHERE 1=1
         ${cursorClause}
+        ${filterClause}
         ORDER BY last_message_at DESC NULLS LAST, session_id DESC
         LIMIT $${limitIndex}
       `,
@@ -147,7 +187,9 @@ router.get('/list', async (req, res, next) => {
     const items = result.rows.map((row) => ({
       sessionId: row.session_id,
       lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
-      messageCount: normalizeCount(row.message_count)
+      messageCount: normalizeCount(row.message_count),
+      isSales: Boolean(row.is_sales),
+      isWhatsapp: Boolean(row.is_whatsapp)
     }));
 
     let nextCursor: { lastMessageAt: string; sessionId: string } | undefined;
@@ -188,17 +230,22 @@ router.get('/', async (req, res, next) => {
         last_message_content: string | null;
         last_message_type: string | null;
         last_message_at: Date | null;
+        is_sales: boolean | null;
+        is_whatsapp: boolean | null;
       }>(
         `
           SELECT
-            session_id,
+            cm.session_id,
             COUNT(*) AS message_count,
-            MAX(created_at) AS last_message_at,
-            (ARRAY_AGG(message ->> 'content' ORDER BY created_at DESC))[1] AS last_message_content,
-            (ARRAY_AGG(message ->> 'type' ORDER BY created_at DESC))[1] AS last_message_type
-          FROM ${chatTable}
-          WHERE session_id = $1
-          GROUP BY session_id
+            MAX(cm.created_at) AS last_message_at,
+            (ARRAY_AGG(cm.message ->> 'content' ORDER BY cm.created_at DESC))[1] AS last_message_content,
+            (ARRAY_AGG(cm.message ->> 'type' ORDER BY cm.created_at DESC))[1] AS last_message_type,
+            COALESCE(BOOL_OR(${SALES_TYPE_CONDITION}), false) AS is_sales,
+            COALESCE(BOOL_OR(vs.is_whatsapp), false) AS is_whatsapp
+          FROM ${chatTable} cm
+          LEFT JOIN ${visitorSettingsTable} vs ON vs.session_id = cm.session_id
+          WHERE cm.session_id = $1
+          GROUP BY cm.session_id
         `,
         [sessionIdQuery]
       );
@@ -208,7 +255,9 @@ router.get('/', async (req, res, next) => {
         lastMessagePreview: row.last_message_content,
         lastMessageType: row.last_message_type,
         lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
-        messageCount: normalizeCount(row.message_count)
+        messageCount: normalizeCount(row.message_count),
+        isSales: Boolean(row.is_sales),
+        isWhatsapp: Boolean(row.is_whatsapp)
       }));
 
       res.json({ data: chats });
@@ -237,6 +286,8 @@ router.get('/', async (req, res, next) => {
       last_message_content: string | null;
       last_message_type: string | null;
       last_message_at: Date | null;
+      is_sales: boolean | null;
+      is_whatsapp: boolean | null;
     }>(
       `
         WITH session_stats AS (
@@ -276,9 +327,12 @@ router.get('/', async (req, res, next) => {
           ls.message_count,
           ls.last_message_at,
           rlm.message ->> 'content' AS last_message_content,
-          rlm.message ->> 'type' AS last_message_type
+          rlm.message ->> 'type' AS last_message_type,
+          COALESCE(${SALES_TYPE_CONDITION}, false) AS is_sales,
+          COALESCE(vs.is_whatsapp, false) AS is_whatsapp
         FROM limited_sessions ls
         JOIN ranked_last_messages rlm ON rlm.session_id = ls.session_id
+        LEFT JOIN ${visitorSettingsTable} vs ON vs.session_id = ls.session_id
         WHERE rlm.row_num = 1
         ORDER BY ls.last_message_at DESC
       `,
@@ -290,7 +344,9 @@ router.get('/', async (req, res, next) => {
       lastMessagePreview: row.last_message_content,
       lastMessageType: row.last_message_type,
       lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
-      messageCount: normalizeCount(row.message_count)
+      messageCount: normalizeCount(row.message_count),
+      isSales: Boolean(row.is_sales),
+      isWhatsapp: Boolean(row.is_whatsapp)
     }));
 
     res.json({ data: chats });
