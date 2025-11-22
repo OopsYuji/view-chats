@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.5
+
 FROM node:20-alpine AS base
 WORKDIR /app
 
