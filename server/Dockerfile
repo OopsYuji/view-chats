@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:labs
 
 FROM node:20-alpine AS base
 WORKDIR /app
