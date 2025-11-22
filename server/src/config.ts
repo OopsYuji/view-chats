@@ -82,8 +82,6 @@ if (!googleClientId) {
   throw new Error('GOOGLE_CLIENT_ID is required for authentication.');
 }
 
-const googleAllowedDomain = normalizeEnv(process.env.GOOGLE_ALLOWED_DOMAIN) ?? 'kiv.chat';
-
 type SslConfig = false | { rejectUnauthorized?: boolean };
 
 const parseBoolean = (value: string | undefined) => {
@@ -156,8 +154,7 @@ export const config = {
   visitorSettingsTable: visitorSettingsTable.raw,
   visitorSettingsTableSql: visitorSettingsTable.sql,
   auth: {
-    googleClientId,
-    allowedDomain: googleAllowedDomain
+    googleClientId
   }
 };
 

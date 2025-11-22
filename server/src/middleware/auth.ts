@@ -49,8 +49,8 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
     const email = payload.email?.toLowerCase();
 
-    if (!email || !email.endsWith(`@${config.auth.allowedDomain}`)) {
-      throw new Error('Email domain not allowed');
+    if (!email) {
+      throw new Error('Email is missing');
     }
 
     (req as typeof req & { authUser?: { email: string; name?: string; picture?: string } }).authUser =

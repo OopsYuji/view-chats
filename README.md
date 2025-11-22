@@ -30,7 +30,7 @@ Simple two-tier TypeScript app for browsing chat sessions stored in PostgreSQL. 
 
 ### Backend (`server`)
 
-1. Copy `.env.example` (repository root) to `.env` and configure database access. Fill in `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`. Hosted providers like Supabase require `PGSSLMODE=require` (and often `PGSSLREJECTUNAUTHORIZED=false`). Optionally set `CHAT_TABLE` / `VISITOR_SETTINGS_TABLE` if you store messages in different table names, and `CORS_ORIGIN` with comma-separated origins (e.g. `http://localhost:5173`). Authentication requires `GOOGLE_CLIENT_ID` (the OAuth client ID from Google Identity Services) and, optionally, `GOOGLE_ALLOWED_DOMAIN` (defaults to `kiv.chat`).
+1. Copy `.env.example` (repository root) to `.env` and configure database access. Fill in `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`. Hosted providers like Supabase require `PGSSLMODE=require` (and often `PGSSLREJECTUNAUTHORIZED=false`). Optionally set `CHAT_TABLE` / `VISITOR_SETTINGS_TABLE` if you store messages in different table names, and `CORS_ORIGIN` with comma-separated origins (e.g. `http://localhost:5173`). Authentication requires `GOOGLE_CLIENT_ID` (the OAuth client ID from Google Identity Services).
 2. The workspace-specific commands are still available if needed: `npm run dev --workspace server`, `npm run build --workspace server`, etc.
 
 Endpoints:
@@ -48,7 +48,7 @@ Endpoints:
 ### Authentication
 
 - The UI loads Google Identity Services in-browser and only enables chat browsing after a successful Google sign-in.
-- ID tokens are forwarded to the backend via `Authorization: Bearer …` headers. The API validates each token via Google, confirms the `aud` matches `GOOGLE_CLIENT_ID`, and only allows email addresses ending in `@kiv.chat` (customizable through `GOOGLE_ALLOWED_DOMAIN`).
+- ID tokens are forwarded to the backend via `Authorization: Bearer …` headers. The API validates each token via Google, confirms the `aud` matches `GOOGLE_CLIENT_ID`, and allows whichever Google accounts you authorize through GIS.
 - Sign out clears the cached ID token and disables auto-select on the Google button so users can switch accounts easily.
 
 ### Notes
