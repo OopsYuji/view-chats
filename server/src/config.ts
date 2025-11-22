@@ -139,6 +139,7 @@ const parseSslConfig = (): SslConfig | undefined => {
 
 export const config = {
   port: parsePort(process.env.PORT, 4000),
+  databaseUrl: normalizeEnv(process.env.DATABASE_URL),
   db: {
     host: normalizeEnv(process.env.PGHOST),
     port: parsePort(process.env.PGPORT, 5432),
@@ -158,11 +159,12 @@ export const config = {
 };
 
 export const assertDatabaseConfig = (): void => {
-  const hasRequiredFields = Boolean(config.db.host && config.db.database && config.db.user);
+  const hasUrl = Boolean(config.databaseUrl);
+  const hasFields = Boolean(config.db.host && config.db.database && config.db.user);
 
-  if (!hasRequiredFields) {
+  if (!hasUrl && !hasFields) {
     throw new Error(
-      'Database connection is not configured. Set PGHOST, PGDATABASE, and PGUSER environment variables.'
+      'Database connection is not configured. Set DATABASE_URL or PGHOST, PGDATABASE, and PGUSER environment variables.'
     );
   }
 };
