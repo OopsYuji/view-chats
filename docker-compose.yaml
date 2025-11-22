@@ -8,13 +8,13 @@ services:
       - .env
     environment:
       PORT: ${PORT:-4000}
-      PGHOST: ${PGHOST:-localhost}
-      PGPORT: ${PGPORT:-5432}
-      PGDATABASE: ${PGDATABASE:-chats}
-      PGUSER: ${PGUSER:-postgres}
-      PGPASSWORD: "${PGPASSWORD:-supersecret}"
-      PGSSLMODE: ${PGSSLMODE:-disable}
-      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED:-false}
+      PGHOST: ${PGHOST}
+      PGPORT: ${PGPORT}
+      PGDATABASE: ${PGDATABASE}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: "${PGPASSWORD}"
+      PGSSLMODE: ${PGSSLMODE}
+      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,http://localhost:8080}
     ports:
       - "${SERVER_PORT:-4000}:4000"
