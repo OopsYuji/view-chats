@@ -8,7 +8,6 @@ services:
       - .env
     environment:
       PORT: ${PORT:-4000}
-      DATABASE_URL: ${DATABASE_URL}
       PGHOST: ${PGHOST:-localhost}
       PGPORT: ${PGPORT:-5432}
       PGDATABASE: ${PGDATABASE:-chats}
