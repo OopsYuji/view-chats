@@ -18,7 +18,7 @@ services:
       PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED:-false}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,http://localhost:8080}
     ports:
-      - "4000:4000"
+      - "${SERVER_PORT:-4000}:4000"
     restart: unless-stopped
 
   web:
@@ -31,5 +31,5 @@ services:
       server:
         condition: service_started
     ports:
-      - "8080:80"
+      - "${WEB_PORT:-8081}:80"
     restart: unless-stopped
