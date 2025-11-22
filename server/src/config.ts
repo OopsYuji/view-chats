@@ -76,10 +76,10 @@ const visitorSettingsTable = parseTableName(
   'visitors_settings'
 );
 
-const googleClientId = normalizeEnv(process.env.GOOGLE_CLIENT_ID);
+const googleClientId = normalizeEnv(process.env.VITE_GOOGLE_CLIENT_ID);
 
 if (!googleClientId) {
-  throw new Error('GOOGLE_CLIENT_ID is required for authentication.');
+  throw new Error('VITE_GOOGLE_CLIENT_ID is required for authentication.');
 }
 
 type SslConfig = false | { rejectUnauthorized?: boolean };
