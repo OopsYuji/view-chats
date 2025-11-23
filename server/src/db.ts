@@ -3,15 +3,13 @@ import { assertDatabaseConfig, config } from './config';
 
 assertDatabaseConfig();
 
-const connectionOptions = config.databaseUrl
-  ? { connectionString: config.databaseUrl }
-  : {
-      host: config.db.host,
-      port: config.db.port,
-      database: config.db.database,
-      user: config.db.user,
-      password: config.db.password
-    };
+const connectionOptions = {
+  host: config.db.host,
+  port: config.db.port,
+  database: config.db.database,
+  user: config.db.user,
+  password: config.db.password
+};
 
 export const pool = new Pool({
   ...connectionOptions,
