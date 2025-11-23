@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   server:
     build:
@@ -5,122 +7,28 @@ services:
     env_file:
       - .env
     environment:
-      PORT: "${PORT:-4000}"
-      PGHOST: "${PGHOST:-}"
-      PGPORT: "${PGPORT:-5432}"
-      PGDATABASE: "${PGDATABASE:-}"
-      PGUSER: "${PGUSER:-}"
-      PGPASSWORD: "${PGPASSWORD:-}"
-      PGSSLMODE: "${PGSSLMODE:-disable}"
-      PGSSLREJECTUNAUTHORIZED: "${PGSSLREJECTUNAUTHORIZED:-false}"
-      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173,http://localhost:8080}"
-      COOLIFY_BRANCH: '"main"'
-      COOLIFY_RESOURCE_UUID: ag00gkww4kwggcccg8wkcgwo
-      COOLIFY_CONTAINER_NAME: server-ag00gkww4kwggcccg8wkcgwo-015805634788
-      SERVICE_URL_SERVER: "https://chats-server.goncearov.com"
-      SERVICE_FQDN_SERVER: chats-server.goncearov.com
-      SERVICE_URL_WEB: "https://chats.goncearov.com"
-      SERVICE_FQDN_WEB: chats.goncearov.com
-      COOLIFY_URL: "https://chats-server.goncearov.com"
-      COOLIFY_FQDN: chats-server.goncearov.com
-      SERVICE_NAME_SERVER: server
-      SERVICE_NAME_WEB: web
+      PORT: ${PORT:-4000}
+      PGHOST: ${PGHOST:-}
+      PGPORT: ${PGPORT:-5432}
+      PGDATABASE: ${PGDATABASE:-}
+      PGUSER: ${PGUSER:-}
+      PGPASSWORD: ${PGPASSWORD:-}
+      PGSSLMODE: ${PGSSLMODE:-disable}
+      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED:-false}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,http://localhost:8080}
     ports:
       - "${SERVER_PORT:-4000}:4000"
     restart: unless-stopped
-    container_name: server-ag00gkww4kwggcccg8wkcgwo-015805634788
-    labels:
-      - coolify.managed=true
-      - coolify.version=4.0.0-beta.444
-      - coolify.applicationId=3
-      - coolify.type=application
-      - coolify.name=server-ag00gkww4kwggcccg8wkcgwo-015805634788
-      - coolify.resourceName=oops-yujiview-chatsmain-q480w404ksww8o40ok0wgsgg
-      - coolify.projectName=view-chats
-      - coolify.serviceName=oops-yujiview-chatsmain-q480w404ksww8o40ok0wgsgg
-      - coolify.environmentName=production
-      - coolify.pullRequestId=0
-      - traefik.enable=true
-      - traefik.http.middlewares.gzip.compress=true
-      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
-      - traefik.http.routers.http-0-ag00gkww4kwggcccg8wkcgwo-server.entryPoints=http
-      - traefik.http.routers.http-0-ag00gkww4kwggcccg8wkcgwo-server.middlewares=redirect-to-https
-      - "traefik.http.routers.http-0-ag00gkww4kwggcccg8wkcgwo-server.rule=Host(`chats-server.goncearov.com`) && PathPrefix(`/`)"
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-server.entryPoints=https
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-server.middlewares=gzip
-      - "traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-server.rule=Host(`chats-server.goncearov.com`) && PathPrefix(`/`)"
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-server.tls.certresolver=letsencrypt
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-server.tls=true
-      - "caddy_0.encode=zstd gzip"
-      - "caddy_0.handle_path.0_reverse_proxy={{upstreams}}"
-      - "caddy_0.handle_path=/*"
-      - caddy_0.header=-Server
-      - "caddy_0.try_files={path} /index.html /index.php"
-      - "caddy_0=https://chats-server.goncearov.com"
-      - caddy_ingress_network=ag00gkww4kwggcccg8wkcgwo
-    networks:
-      ag00gkww4kwggcccg8wkcgwo: null
+
   web:
     build:
       context: ./web
       args:
-        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://server:4000}"
-        VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID:-}"
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://server:4000}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     depends_on:
       server:
         condition: service_started
     ports:
       - "${WEB_PORT:-8081}:80"
     restart: unless-stopped
-    container_name: web-ag00gkww4kwggcccg8wkcgwo-015805684485
-    labels:
-      - coolify.managed=true
-      - coolify.version=4.0.0-beta.444
-      - coolify.applicationId=3
-      - coolify.type=application
-      - coolify.name=web-ag00gkww4kwggcccg8wkcgwo-015805684485
-      - coolify.resourceName=oops-yujiview-chatsmain-q480w404ksww8o40ok0wgsgg
-      - coolify.projectName=view-chats
-      - coolify.serviceName=oops-yujiview-chatsmain-q480w404ksww8o40ok0wgsgg
-      - coolify.environmentName=production
-      - coolify.pullRequestId=0
-      - traefik.enable=true
-      - traefik.http.middlewares.gzip.compress=true
-      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
-      - traefik.http.routers.http-0-ag00gkww4kwggcccg8wkcgwo-web.entryPoints=http
-      - traefik.http.routers.http-0-ag00gkww4kwggcccg8wkcgwo-web.middlewares=redirect-to-https
-      - "traefik.http.routers.http-0-ag00gkww4kwggcccg8wkcgwo-web.rule=Host(`chats.goncearov.com`) && PathPrefix(`/`)"
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-web.entryPoints=https
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-web.middlewares=gzip
-      - "traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-web.rule=Host(`chats.goncearov.com`) && PathPrefix(`/`)"
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-web.tls.certresolver=letsencrypt
-      - traefik.http.routers.https-0-ag00gkww4kwggcccg8wkcgwo-web.tls=true
-      - "caddy_0.encode=zstd gzip"
-      - "caddy_0.handle_path.0_reverse_proxy={{upstreams}}"
-      - "caddy_0.handle_path=/*"
-      - caddy_0.header=-Server
-      - "caddy_0.try_files={path} /index.html /index.php"
-      - "caddy_0=https://chats.goncearov.com"
-      - caddy_ingress_network=ag00gkww4kwggcccg8wkcgwo
-    networks:
-      ag00gkww4kwggcccg8wkcgwo: null
-    environment:
-      VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://server:4000}"
-      VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID:-}"
-      COOLIFY_BRANCH: '"main"'
-      COOLIFY_RESOURCE_UUID: ag00gkww4kwggcccg8wkcgwo
-      COOLIFY_CONTAINER_NAME: web-ag00gkww4kwggcccg8wkcgwo-015805684485
-      SERVICE_URL_SERVER: "https://chats-server.goncearov.com"
-      SERVICE_FQDN_SERVER: chats-server.goncearov.com
-      SERVICE_URL_WEB: "https://chats.goncearov.com"
-      SERVICE_FQDN_WEB: chats.goncearov.com
-      COOLIFY_URL: "https://chats.goncearov.com"
-      COOLIFY_FQDN: chats.goncearov.com
-      SERVICE_NAME_SERVER: server
-      SERVICE_NAME_WEB: web
-    env_file:
-      - .env
-networks:
-  ag00gkww4kwggcccg8wkcgwo:
-    name: ag00gkww4kwggcccg8wkcgwo
-    external: true
