@@ -8,14 +8,14 @@ services:
       - .env
     environment:
       PORT: ${PORT:-4000}
-      DATABASE_URL: ${DATABASE_URL}
-      PGHOST: ${PGHOST}
-      PGPORT: ${PGPORT}
-      PGDATABASE: ${PGDATABASE}
-      PGUSER: ${PGUSER}
-      PGPASSWORD: ${PGPASSWORD}
-      PGSSLMODE: ${PGSSLMODE}
-      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED}
+      DATABASE_URL: ${DATABASE_URL:-}
+      PGHOST: ${PGHOST:-}
+      PGPORT: ${PGPORT:-5432}
+      PGDATABASE: ${PGDATABASE:-}
+      PGUSER: ${PGUSER:-}
+      PGPASSWORD: ${PGPASSWORD:-}
+      PGSSLMODE: ${PGSSLMODE:-disable}
+      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED:-false}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,http://localhost:8080}
     ports:
       - "${SERVER_PORT:-4000}:4000"
