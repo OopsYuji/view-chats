@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchChatList, fetchChatMessages } from './api';
+import { fetchChatList, fetchChatMessages, UnauthorizedError } from './api';
 import { initializeAuthToken, persistAuthToken } from './auth';
 import type { ChatListCursor, ChatListItem, ChatMessage } from './types';
 
@@ -213,6 +213,11 @@ const App = () => {
     window.google?.accounts?.id?.disableAutoSelect?.();
   }, []);
 
+  const handleUnauthorized = useCallback(() => {
+    handleSignOut();
+    setAuthError('Session expired. Please sign in again.');
+  }, [handleSignOut]);
+
   const loadChatList = useCallback(
     async ({ reset, cursor }: { reset: boolean; cursor?: ChatListCursor | null }) => {
       if (!authToken) {
@@ -252,6 +257,11 @@ const App = () => {
           return prev ?? response.items[0]?.sessionId ?? null;
         });
       } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          handleUnauthorized();
+          return;
+        }
+
         console.error('Failed to load chats', error);
         setListError(error instanceof Error ? error.message : 'Unknown error');
         if (reset) {
@@ -263,7 +273,7 @@ const App = () => {
         setListLoading(false);
       }
     },
-    [appliedSearch, authToken, showSalesOnly, showWhatsappOnly]
+    [appliedSearch, authToken, handleUnauthorized, showSalesOnly, showWhatsappOnly]
   );
 
   useEffect(() => {
@@ -291,9 +301,14 @@ const App = () => {
       try {
         const data = await fetchChatMessages(selectedSessionId);
         if (!isCancelled) {
-        setMessages(data);
-      }
-    } catch (error) {
+          setMessages(data);
+        }
+      } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          handleUnauthorized();
+          return;
+        }
+
         console.error('Failed to load chat messages', error);
         if (!isCancelled) {
           setMessages([]);
@@ -311,7 +326,7 @@ const App = () => {
     return () => {
       isCancelled = true;
     };
-  }, [selectedSessionId, authToken]);
+  }, [selectedSessionId, authToken, handleUnauthorized]);
 
   useEffect(() => {
     setExpandedMessageIds({});

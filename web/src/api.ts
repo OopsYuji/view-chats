@@ -15,7 +15,18 @@ interface ApiEnvelope<T> {
   error?: unknown;
 }
 
+export class UnauthorizedError extends Error {
+  constructor(message = 'Unauthorized') {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
 const handleResponse = async <T>(response: Response): Promise<T> => {
+  if (response.status === 401) {
+    throw new UnauthorizedError();
+  }
+
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(text || `Request failed with status ${response.status}`);
