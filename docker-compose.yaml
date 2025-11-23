@@ -7,14 +7,14 @@ services:
     env_file:
       - .env
     environment:
-      PORT: ${PORT:-4000}
-      PGHOST: ${PGHOST:-}
-      PGPORT: ${PGPORT:-5432}
-      PGDATABASE: ${PGDATABASE:-}
-      PGUSER: ${PGUSER:-}
-      PGPASSWORD: ${PGPASSWORD:-}
-      PGSSLMODE: ${PGSSLMODE:-disable}
-      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED:-false}
+      PORT: ${PORT}
+      PGHOST: ${PGHOST}
+      PGPORT: ${PGPORT}
+      PGDATABASE: ${PGDATABASE}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+      PGSSLMODE: ${PGSSLMODE}
+      PGSSLREJECTUNAUTHORIZED: ${PGSSLREJECTUNAUTHORIZED}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,http://localhost:8080}
     ports:
       - "${SERVER_PORT:-4000}:4000"
